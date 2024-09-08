@@ -5,19 +5,20 @@
 
 package io.opentelemetry.javaagent.instrumentation.pekkohttp.v1_0
 
+import io.opentelemetry.context.Context
+import io.opentelemetry.instrumentation.testing.junit.http.ServerEndpoint._
+import io.opentelemetry.instrumentation.testing.junit.http.{AbstractHttpServerTest, ServerEndpoint}
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
-import org.apache.pekko.http.scaladsl.model.HttpMethods.GET
+import org.apache.pekko.http.scaladsl.model.HttpMethods.{GET, POST}
+import org.apache.pekko.http.scaladsl.model.StatusCodes.OK
 import org.apache.pekko.http.scaladsl.model._
+import org.apache.pekko.pattern.after
 import org.apache.pekko.stream.ActorMaterializer
-import io.opentelemetry.instrumentation.testing.junit.http.{
-  AbstractHttpServerTest,
-  ServerEndpoint
-}
-import io.opentelemetry.instrumentation.testing.junit.http.ServerEndpoint._
 
 import java.util.function.Supplier
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 
 object PekkoHttpTestAsyncWebServer {
@@ -57,6 +58,17 @@ object PekkoHttpTestAsyncWebServer {
           }
         )
       }
+    case HttpRequest(POST, uri: Uri, _, _, _) =>
+      val endpoint = ServerEndpoint.forPath(uri.path.toString())
+      AbstractHttpServerTest.controller(endpoint, () =>
+        for {
+          _ <- Future.successful(2)
+          firstContext = Context.current()
+          _ <- after(1.second, system.scheduler)(Future.successful(1))
+          secondContext = Context.current()
+          _ = assert(firstContext eq secondContext)
+        } yield HttpResponse(status = OK, entity = endpoint.getBody)
+      )
   }
 
   private var binding: ServerBinding = _
